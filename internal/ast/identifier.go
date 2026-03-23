@@ -1,0 +1,12 @@
+package ast
+
+import "go.mod/internal/lexer"
+
+type Identifier struct {
+	Token lexer.Token
+	Value string
+}
+
+func (i *Identifier) expressionNode()      {}
+func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
+func (i *Identifier) String() string       { return i.Value }

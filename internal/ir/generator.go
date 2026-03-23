@@ -169,12 +169,12 @@ func (g *Generator) generateExpression(node ast.Expression) VReg {
 
 		case "chmod":
 			g.emit(Instruction{Op: ir_constants_and_types.SYSCALL, Dst: resultReg, Src1: Imm{Value: ir_constants_and_types.SYSCALL_CHMOD}, Args: argRegs})
-
+		case "delete":
+			g.emit(Instruction{Op: ir_constants_and_types.SYSCALL, Dst: resultReg, Src1: Imm{Value: ir_constants_and_types.SYSCALL_UNLINK}, Args: argRegs})
 		// 2. Сложные макросы (Отправляем в Распутыватель)
 		case "copy":
 			// Обрати внимание: Op теперь MACRO_COPY, а не SYSCALL!
 			g.emit(Instruction{Op: ir_constants_and_types.MACRO_COPY, Dst: resultReg, Args: argRegs})
-
 		case "useradd":
 			g.emit(Instruction{Op: ir_constants_and_types.MACRO_USERADD, Dst: resultReg, Args: argRegs})
 		case "write":
@@ -183,7 +183,8 @@ func (g *Generator) generateExpression(node ast.Expression) VReg {
 			g.emit(Instruction{Op: ir_constants_and_types.MACRO_GET_FILE_SIZE, Dst: resultReg, Args: argRegs})
 		case "rename":
 			g.emit(Instruction{Op: ir_constants_and_types.SYSCALL, Dst: resultReg, Src1: Imm{Value: ir_constants_and_types.SYSCALL_RENAME}, Args: argRegs})
-
+		case "sleep":
+			g.emit(Instruction{Op: ir_constants_and_types.MACRO_SLEEP, Dst: resultReg, Args: argRegs})
 		default:
 			// Если мы допишем импорт стороннего ASM (например my_func()),
 			// то здесь будет вызов CALL

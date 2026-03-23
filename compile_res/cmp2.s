@@ -3,7 +3,7 @@
 _start:
   push rbp
   mov rbp, rsp
-  sub rsp, 192
+  sub rsp, 240
   jmp .L_str_1_skip
 .L_str_1_data:
   .asciz "/tmp/hack.log"
@@ -35,20 +35,21 @@ _start:
   mov rsi, 0
   mov rdx, 0
   syscall
-  mov qword [rbp - 128], rax
-  mov r12, qword [rbp - 128]
+  mov qword [rbp - 168], rax
+  mov r12, qword [rbp - 168]
+  mov r13, 1
   cmp r12, r13
   jl .L3
   mov rax, 8
-  mov rdi, qword [rbp - 128]
+  mov rdi, qword [rbp - 168]
   mov rsi, 0
   mov rdx, 2
   syscall
   mov qword [rbp - 56], rax
   mov rax, 3
-  mov rdi, qword [rbp - 128]
+  mov rdi, qword [rbp - 168]
   syscall
-  mov qword [rbp - 136], rax
+  mov qword [rbp - 176], rax
 .L3:
   mov r12, qword [rbp - 56]
   mov qword [rbp - 64], r12
@@ -66,18 +67,24 @@ _start:
 .L_str_12_skip:
   lea r12, [rip + .L_str_12_data]
   mov qword [rbp - 96], r12
+  mov r12, -1
+  mov qword [rbp - 88], r12
   mov rax, 2
   mov rdi, qword [rbp - 16]
   mov rsi, 65
   mov rdx, 420
   syscall
-  mov qword [rbp - 144], rax
+  mov qword [rbp - 184], rax
+  mov r12, qword [rbp - 184]
+  mov r13, 1
+  cmp r12, r13
+  jl .L4
   mov rax, 8
-  mov rdi, qword [rbp - 144]
+  mov rdi, qword [rbp - 184]
   mov rsi, qword [rbp - 64]
   mov rdx, 0
   syscall
-  mov qword [rbp - 152], rax
+  mov qword [rbp - 192], rax
   mov rdi, qword [rbp - 96]
   sub rcx, rcx
   not rcx
@@ -86,17 +93,20 @@ _start:
   repne scasb
   not rcx
   dec rcx
-  mov qword [rbp - 160], rcx
+  mov qword [rbp - 200], rcx
   mov rax, 1
-  mov rdi, qword [rbp - 144]
+  mov rdi, qword [rbp - 184]
   mov rsi, qword [rbp - 96]
-  mov rdx, qword [rbp - 160]
+  mov rdx, qword [rbp - 200]
   syscall
-  mov qword [rbp - 168], rax
+  mov qword [rbp - 208], rax
   mov rax, 3
-  mov rdi, qword [rbp - 144]
+  mov rdi, qword [rbp - 184]
   syscall
-  mov qword [rbp - 176], rax
+  mov qword [rbp - 216], rax
+  mov r12, 0
+  mov qword [rbp - 88], r12
+.L4:
   mov rax, 82
   mov rdi, qword [rbp - 16]
   mov rsi, qword [rbp - 32]
@@ -105,12 +115,51 @@ _start:
   jmp .L2
 .L1:
 .L2:
-  mov r12, 0
+  jmp .L_str_15_skip
+.L_str_15_data:
+  .asciz "/tmp/hack.bak"
+.L_str_15_skip:
+  lea r12, [rip + .L_str_15_data]
   mov qword [rbp - 120], r12
-  mov rax, 60
+  mov r12, 511
+  mov qword [rbp - 128], r12
+  mov rax, 90
   mov rdi, qword [rbp - 120]
+  mov rsi, qword [rbp - 128]
   syscall
   mov qword [rbp - 112], rax
+  mov r12, 10
+  mov qword [rbp - 144], r12
+  mov r12, -1
+  mov qword [rbp - 136], r12
+  mov rax, 2
+  mov rdi, qword [rbp - 144]
+  mov rsi, 0
+  mov rdx, 0
+  syscall
+  mov qword [rbp - 224], rax
+  mov r12, qword [rbp - 224]
+  mov r13, 1
+  cmp r12, r13
+  jl .L5
+  mov rax, 8
+  mov rdi, qword [rbp - 224]
+  mov rsi, 0
+  mov rdx, 2
+  syscall
+  mov qword [rbp - 136], rax
+  mov rax, 3
+  mov rdi, qword [rbp - 224]
+  syscall
+  mov qword [rbp - 232], rax
+.L5:
+  mov r12, 0
+  mov qword [rbp - 160], r12
+  mov rax, 60
+  mov rdi, qword [rbp - 160]
+  syscall
+  mov qword [rbp - 152], rax
   mov rsp, rbp
   pop rbp
   ret
+

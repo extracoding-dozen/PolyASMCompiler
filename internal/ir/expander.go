@@ -19,18 +19,21 @@ func (e *MacroExpander) Expand(input []Instruction) []Instruction {
 
 		case ir_constants_and_types.MACRO_COPY:
 			// Распутываем copy(src, dst)
-			expandedBlock := e.expandCopy(inst.Args[0], inst.Args[1])
+			expandedBlock := e.expandCopy(inst.Dst, inst.Args[0], inst.Args[1])
 			// Вставляем результат распутывания вместо оригинальной инструкции
 			output = append(output, expandedBlock...)
 
 		case ir_constants_and_types.MACRO_USERADD:
-			expandedBlock := e.expandUserAdd(inst.Args[0], inst.Args[1])
+			expandedBlock := e.expandUserAdd(inst.Dst, inst.Args[0], inst.Args[1])
 			output = append(output, expandedBlock...)
 		case ir_constants_and_types.MACRO_WRITE:
 			// Выдаем высокоуровневый макрос})
-			output = append(output, e.expandWrite(inst.Args[0], inst.Args[1], inst.Args[2])...)
+			output = append(output, e.expandWrite(inst.Dst, inst.Args[0], inst.Args[1], inst.Args[2])...)
 		case ir_constants_and_types.MACRO_GET_FILE_SIZE:
 			expandedBlock := e.expandGetFileSize(inst.Dst, inst.Args[0])
+			output = append(output, expandedBlock...)
+		case ir_constants_and_types.MACRO_SLEEP:
+			expandedBlock := e.expandSleep(inst.Dst, inst.Args[0])
 			output = append(output, expandedBlock...)
 		default:
 			// Обычные инструкции (MOV, ADD, SYSCALL 59) пробрасываем без изменений
@@ -41,21 +44,37 @@ func (e *MacroExpander) Expand(input []Instruction) []Instruction {
 	return output
 }
 
-func (e *MacroExpander) expandCopy(srcReg Value, dstReg Value) []Instruction {
+func (e *MacroExpander) expandCopy(resReg, srcReg Value, dstReg Value) []Instruction {
 	var block []Instruction
 
 	// Запрашиваем новые виртуальные регистры для файловых дескрипторов
 	fdIn := e.ctx.NextVReg()
 	fdOut := e.ctx.NextVReg()
-
+	errLabel := e.ctx.NextLabel()
 	// 1. fd_in = sys_open(src, 0 /* O_RDONLY */)
+
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_ERROR},
+	})
+
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.SYSCALL,
 		Dst:  fdIn,
 		Src1: Imm{Value: ir_constants_and_types.SYSCALL_OPEN}, // номер sys_open
 		Args: []Value{srcReg, Imm{Value: 0}, Imm{Value: 0}},
 	})
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.CMP,
+		Dst:  fdIn,
+		Src1: Imm{Value: 0},
+	})
 
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.JL,
+		Dst: errLabel,
+	})
 	// 2. fd_out = sys_open(dst, 65 /* O_WRONLY|O_CREAT */, 0777)
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.SYSCALL,
@@ -63,7 +82,16 @@ func (e *MacroExpander) expandCopy(srcReg Value, dstReg Value) []Instruction {
 		Src1: Imm{Value: ir_constants_and_types.SYSCALL_OPEN},
 		Args: []Value{dstReg, Imm{Value: 65}, Imm{Value: 511}}, // 511 = 0777 в восьмеричной
 	})
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.CMP,
+		Dst:  fdOut,
+		Src1: Imm{Value: 0},
+	})
 
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.JL,
+		Dst: errLabel,
+	})
 	// 3. Вызываем sys_sendfile (номер 40 в x86_64).
 	// Он копирует данные напрямую в ядре, не гоняя их в UserSpace!
 	// sys_sendfile(out_fd, in_fd, offset, count)
@@ -89,23 +117,46 @@ func (e *MacroExpander) expandCopy(srcReg Value, dstReg Value) []Instruction {
 		Src1: Imm{Value: ir_constants_and_types.SYSCALL_CLOSE},
 		Args: []Value{fdOut},
 	})
-
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resultReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_SUCCESS},
+	})
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.LABEL,
+		Dst: errLabel,
+	})
 	return block
 }
 
-func (e *MacroExpander) expandWrite(pathReg, offsetReg, dataReg Value) []Instruction {
+func (e *MacroExpander) expandWrite(resReg, pathReg, offsetReg, dataReg Value) []Instruction {
 	var block []Instruction
 
 	fdOut := e.ctx.NextVReg()
+	errLabel := e.ctx.NextLabel()
 
-	// 1. fd = sys_open(path, O_WRONLY | O_CREAT (65), 0644 (420))
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_ERROR},
+	})
+
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.SYSCALL,
 		Dst:  fdOut,
 		Src1: Imm{Value: ir_constants_and_types.SYSCALL_OPEN}, // sys_open
 		Args: []Value{pathReg, Imm{Value: 65}, Imm{Value: 420}},
 	})
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.CMP,
+		Dst:  fdOut,
+		Src1: Imm{Value: 0},
+	})
 
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.JL,
+		Dst: errLabel,
+	})
 	// 2. sys_lseek(fd, offset, SEEK_SET (0))
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.SYSCALL,
@@ -140,11 +191,20 @@ func (e *MacroExpander) expandWrite(pathReg, offsetReg, dataReg Value) []Instruc
 		Src1: Imm{Value: ir_constants_and_types.SYSCALL_CLOSE}, // sys_close
 		Args: []Value{fdOut},
 	})
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_SUCCESS},
+	})
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.LABEL,
+		Dst: errLabel,
+	})
 
 	return block
 }
 
-func (e *MacroExpander) expandUserAdd(userReg, passReg Value) []Instruction {
+func (e *MacroExpander) expandUserAdd(resReg, userReg, passReg Value) []Instruction {
 	var block []Instruction
 
 	// Нам понадобится строка "/etc/passwd". Мы создаем её прямо здесь!
@@ -158,6 +218,14 @@ func (e *MacroExpander) expandUserAdd(userReg, passReg Value) []Instruction {
 	// 1. Открываем /etc/passwd на дозапись: fd = open("/etc/passwd", O_WRONLY | O_APPEND)
 	// O_WRONLY(1) | O_APPEND(1024) = 1025
 	fdOut := e.ctx.NextVReg()
+	errorLabel := e.ctx.NextLabel()
+
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_ERROR},
+	})
+
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.SYSCALL,
 		Dst:  fdOut,
@@ -165,6 +233,16 @@ func (e *MacroExpander) expandUserAdd(userReg, passReg Value) []Instruction {
 		Args: []Value{passwdPathReg, Imm{Value: 1025}, Imm{Value: 420}},
 	})
 
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.CMP,
+		Dst:  fdOut,
+		Src1: Imm{Value: 0},
+	})
+
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.JL,
+		Dst: errorLabel,
+	})
 	// 2. Пишем логин (userReg)
 	// size = strlen(user)
 	userSizeReg := e.ctx.NextVReg()
@@ -206,6 +284,16 @@ func (e *MacroExpander) expandUserAdd(userReg, passReg Value) []Instruction {
 		Args: []Value{fdOut},
 	})
 
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.MOV,
+		Dst:  resReg,
+		Src1: Imm{Value: ir_constants_and_types.RETURN_SUCCESS},
+	})
+
+	block = append(block, Instruction{
+		Op:  ir_constants_and_types.LABEL,
+		Dst: errorLabel,
+	})
 	// (Для полного useradd нужно еще записать пароль в /etc/shadow,
 	// но логика абсолютно такая же. Оставим как домашнее задание).
 
@@ -233,7 +321,7 @@ func (e *MacroExpander) expandGetFileSize(resultReg, filepathReg Value) []Instru
 	block = append(block, Instruction{
 		Op:   ir_constants_and_types.CMP,
 		Dst:  fdReg,
-		Args: []Value{fdReg, Imm{Value: 0}},
+		Src1: Imm{Value: 0},
 	})
 	errLaber := e.ctx.NextLabel()
 	block = append(block, Instruction{
@@ -263,6 +351,18 @@ func (e *MacroExpander) expandGetFileSize(resultReg, filepathReg Value) []Instru
 	block = append(block, Instruction{
 		Op:  ir_constants_and_types.LABEL,
 		Dst: errLaber,
+	})
+	return block
+}
+
+func (e *MacroExpander) expandSleep(resultReg, sleepTime Value) []Instruction {
+	var block []Instruction
+
+	block = append(block, Instruction{
+		Op:   ir_constants_and_types.SYSCALL,
+		Dst:  resultReg,
+		Src1: Imm{Value: ir_constants_and_types.SYSCALL_NANOSLEEP},
+		Args: []Value{sleepTime, Imm{Value: 0}},
 	})
 	return block
 }

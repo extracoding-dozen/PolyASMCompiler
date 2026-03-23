@@ -6,5 +6,5 @@ const (
 	MACRO_WRITE         Opcode = "MACRO_WRITE"
 	MACRO_STRLEN        Opcode = "MACRO_STRLEN"
 	MACRO_GET_FILE_SIZE Opcode = "MACRO_GET_FILE_SIZE"
-	MACRO_RENAME        Opcode = "MACRO_RENAME"
+	MACRO_SLEEP         Opcode = "MACRO_SLEEP"
 )
