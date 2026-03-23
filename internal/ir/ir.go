@@ -3,23 +3,11 @@ package ir
 import (
 	"fmt"
 	"strings"
+
+	"go.mod/internal/ir/ir_constants_and_types"
 )
 
 // Opcode - код операции
-type Opcode string
-
-const (
-	MOV      Opcode = "MOV"
-	ADD      Opcode = "ADD"
-	SUB      Opcode = "SUB"
-	CMP      Opcode = "CMP"
-	JMP      Opcode = "JMP"
-	JNE      Opcode = "JNE" // Jump if Not Equal
-	JE       Opcode = "JE"  // Jump if Equal
-	LABEL    Opcode = "LABEL"
-	SYSCALL  Opcode = "SYSCALL"
-	LOAD_STR Opcode = "LOAD_STR" // Специальная инструкция для загрузки строк на стек
-)
 
 // Value - интерфейс для операндов (регистр, число, строка или метка)
 type Value interface {
@@ -27,28 +15,44 @@ type Value interface {
 }
 
 // VReg - Виртуальный регистр (v0, v1, v2)
-type VReg struct{ ID int }
+type VReg struct {
+	ID int
+}
 
-func (v VReg) String() string { return fmt.Sprintf("v%d", v.ID) }
+func (v VReg) String() string {
+	return fmt.Sprintf("v%d", v.ID)
+}
 
 // Imm - Числовой литерал (10, 0x400)
-type Imm struct{ Value int64 }
+type Imm struct {
+	Value int64
+}
 
-func (i Imm) String() string { return fmt.Sprintf("%d", i.Value) }
+func (i Imm) String() string {
+	return fmt.Sprintf("%d", i.Value)
+}
 
 // Str - Строковый литерал
-type Str struct{ Value string }
+type Str struct {
+	Value string
+}
 
-func (s Str) String() string { return fmt.Sprintf(`"%s"`, s.Value) }
+func (s Str) String() string {
+	return fmt.Sprintf(`"%s"`, s.Value)
+}
 
 // Lbl - Метка для переходов (.L1, .L2)
-type Lbl struct{ Name string }
+type Lbl struct {
+	Name string
+}
 
-func (l Lbl) String() string { return l.Name }
+func (l Lbl) String() string {
+	return l.Name
+}
 
 // Instruction - одна команда в нашем плоском IR-коде
 type Instruction struct {
-	Op   Opcode
+	Op   ir_constants_and_types.Opcode
 	Dst  Value   // Куда записываем результат (обычно VReg)
 	Src1 Value   // Откуда берем данные (VReg или Imm)
 	Src2 Value   // Второй аргумент (для ADD, SUB, CMP)
@@ -57,17 +61,17 @@ type Instruction struct {
 
 func (inst Instruction) String() string {
 	switch inst.Op {
-	case LABEL:
+	case ir_constants_and_types.LABEL:
 		return fmt.Sprintf("%s:", inst.Dst)
-	case SYSCALL:
+	case ir_constants_and_types.SYSCALL:
 		args := []string{}
 		for _, a := range inst.Args {
 			args = append(args, a.String())
 		}
 		return fmt.Sprintf("  %s %s, [%s] -> %s", inst.Op, inst.Src1, strings.Join(args, ", "), inst.Dst)
-	case JMP, JE, JNE:
+	case ir_constants_and_types.JMP, ir_constants_and_types.JE, ir_constants_and_types.JNE:
 		return fmt.Sprintf("  %s %s", inst.Op, inst.Dst)
-	case LOAD_STR:
+	case ir_constants_and_types.LOAD_STR:
 		return fmt.Sprintf("  %s %s, %s", inst.Op, inst.Dst, inst.Src1)
 	default:
 		if inst.Src2 != nil {

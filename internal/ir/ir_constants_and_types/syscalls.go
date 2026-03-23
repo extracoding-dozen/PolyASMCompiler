@@ -1,0 +1,14 @@
+package ir_constants_and_types
+
+const (
+	SYSCALL_OPEN      = 2
+	SYSCALL_CLOSE     = 3
+	SYSCALL_SEND_FILE = 40
+	SYSCALL_LSEEK     = 8
+	SYSCALL_WRITE     = 1
+	SYSCALL_EXIT      = 60
+	SYSCALL_FORK      = 57
+	SYSCALL_EXECVE    = 59
+	SYSCALL_CHMOD     = 90
+	SYSCALL_RENAME    = 82
+)

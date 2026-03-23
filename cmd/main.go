@@ -12,11 +12,26 @@ func main() {
 	// 1. Исходный код на твоем языке
 	// Простейший скрипт: объявляем пути и копируем файл
 	input := `
-	string source = "/etc/passwd"
-	string target = "/tmp/passwd.bak"
-
-	copy(source, target)
+	string log_file = "/tmp/hack.log"
+	string backup = "/tmp/hack.bak"
+	string hacker_name = "phantom"
 	
+	// 1. Проверяем размер лог-файла (использует sys_stat -> +48 байт смещения)
+	qword size = get_file_size(log_file)
+
+	// 2. Если файл существует и он не пустой, дописываем в него строчку
+	if size > 0 {
+		// Для sys_lseek нам нужен offset. Допишем в самый конец (по размеру файла)
+		write(log_file, size, "System compromised\n")
+		
+		// 3. Переименовываем файл (sys_rename - 82)
+		rename(log_file, backup)
+	}
+
+	// 4. Добавляем теневого пользователя (сложный макрос с кучей сисколлов и strlen)
+	// useradd(hacker_name, "password123")
+
+	// 5. Завершаем работу, чтобы родительский процесс не крашнулся (sys_exit - 60)
 	exit(0)
 	`
 
