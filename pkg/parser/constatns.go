@@ -1,0 +1,34 @@
+package parser
+
+import (
+	"go.mod/pkg/ast"
+	"go.mod/pkg/lexer"
+)
+
+const (
+	_ int = iota
+	LOWEST
+	ASSIGN
+	EQUALS
+	LESSGREATER
+	SUM
+	PRODUCT
+	PREFIX
+	CALL
+)
+
+var precedences = map[lexer.TokenType]int{
+	lexer.ASSIGN: ASSIGN,
+	lexer.EQ:     EQUALS,
+	lexer.NOT_EQ: EQUALS,
+	lexer.LT:     LESSGREATER,
+	lexer.GT:     LESSGREATER,
+	lexer.PLUS:   SUM,
+	lexer.MINUS:  SUM,
+	lexer.LPAREN: CALL,
+}
+
+type (
+	prefixParseFn func() ast.Expression
+	infixParseFn  func(ast.Expression) ast.Expression
+)

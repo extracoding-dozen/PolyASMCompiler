@@ -1,0 +1,223 @@
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+body { background-color: #0d1117; color: #c9d1d9; height: 100vh; overflow: hidden; }
+
+.app-container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; background: radial-gradient(circle at center, #1e2633 0%, #0d1117 100%);}
+
+.workspace { display: flex; flex: 1; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; background-color: #161b22; }
+
+/* Левая и правая панели */
+.left-panel { flex: 1; display: flex; flex-direction: column; min-width: 300px; }
+.right-panel { flex: 1; display: flex; flex-direction: column; min-width: 300px; background-color: #0d1117;}
+
+/* Разделители */
+.resizer-vertical { width: 2px; background-color: #30363d; }
+.resizer-horizontal { height: 2px; background-color: #30363d; }
+
+/* Внутренние контейнеры левой панели */
+.ide-container { flex: 2; display: flex; flex-direction: column; }
+.logs-container { flex: 1; display: flex; flex-direction: column; background-color: #0d1117;}
+
+.panel-header { padding: 8px 15px; background-color: #21262d; font-size: 12px; font-weight: bold; letter-spacing: 1px; border-bottom: 1px solid #30363d; color: #8b949e; }
+
+/* Текстовые поля (Код и Логи) */
+textarea, #logs-output {
+    flex: 1; width: 100%; border: none; background: transparent; color: #c9d1d9;
+    font-family: 'Courier New', Courier, monospace; font-size: 14px; padding: 15px;
+    resize: none; outline: none;
+}
+#logs-output { overflow-y: auto; white-space: pre-wrap; font-size: 13px; color: #8b949e; }
+
+/* Нижняя панель */
+.settings-panel {
+    display: flex; justify-content: space-between; align-items: center; padding: 15px 20px;
+    background-color: #161b22; border: 1px solid #30363d; border-radius: 8px;
+}
+
+.settings-group { display: flex; align-items: center; gap: 15px; font-size: 12px; font-weight: bold; color: #8b949e;}
+.settings-group select, .settings-group input { background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 5px; border-radius: 4px; }
+
+.actions-group { display: flex; gap: 15px; align-items: center;}
+
+button { padding: 10px 20px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 12px; }
+.btn-secondary { background-color: #21262d; color: #58a6ff; border: 1px solid #30363d; }
+.btn-secondary:hover { background-color: #30363d; }
+
+.btn-primary { background: linear-gradient(90deg, #1f6feb, #3fb950); color: white; display: flex; align-items: center; gap: 8px; padding: 10px 25px; box-shadow: 0 0 15px rgba(31, 111, 235, 0.4); }
+.btn-primary:hover { opacity: 0.9; box-shadow: 0 0 20px rgba(31, 111, 235, 0.6); }
+.play-icon { font-size: 16px; }
+
+/* Добавьте эти правила в конец вашего style.css */
+
+.settings-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch; /* Растягиваем по высоте */
+    padding: 10px 15px;
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    gap: 20px;
+}
+
+.settings-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.panel-header-small {
+    font-size: 11px;
+    font-weight: bold;
+    color: #8b949e;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.obf-box {
+    flex: 1; /* Обфускация занимает центральное место */
+    border-left: 1px solid #30363d;
+    border-right: 1px solid #30363d;
+    padding: 0 20px;
+}
+
+.obf-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Две колонки для галочек */
+    gap: 6px 15px;
+    font-size: 12px;
+    color: #c9d1d9;
+}
+
+.num-input {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+}
+
+.num-input input[type="number"] {
+    width: 60px;
+    background-color: #0d1117;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    padding: 4px;
+    border-radius: 4px;
+    text-align: right;
+}
+
+.graph-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.actions-group {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Стилизация чекбоксов */
+input[type="checkbox"] {
+    accent-color: #3fb950; /* Зеленая галочка в стиле хакера */
+    cursor: pointer;
+}
+label { cursor: pointer; }
+/* --- ЛЕВАЯ ПАНЕЛЬ (РЕДАКТОР) --- */
+.editor-wrapper {
+    position: relative;
+    flex: 1; /* Занимает все доступное место */
+    width: 100%;
+    overflow: hidden; /* Скрываем внешний скролл */
+    background-color: #0d1117;
+}
+
+/* ВАЖНО: Оба слоя должны иметь ИДЕНТИЧНЫЕ свойства шрифта и отступов */
+#editor, #highlighting-layer {
+    margin: 0;
+    padding: 15px;
+    border: 0;
+    width: 100%;
+    height: 100%; /* Занимают 100% от .editor-wrapper */
+    position: absolute; /* Накладываем друг на друга */
+    top: 0;
+    left: 0;
+
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    line-height: 20px; /* ЖЕСТКО ЗАДАЕМ line-height в пикселях */
+    letter-spacing: normal;
+    word-spacing: normal;
+    tab-size: 4;
+    box-sizing: border-box; /* Padding включен в 100% height */
+
+    white-space: pre;      /* Без переноса длинных строк */
+    overflow-wrap: normal;
+    overflow: auto;        /* Включаем скролл внутри слоев */
+}
+
+#editor {
+    color: transparent;    /* Текст прозрачный */
+    background: transparent;
+    caret-color: #c9d1d9;  /* Виден только курсор */
+    z-index: 2;
+    resize: none;
+    outline: none;
+}
+
+#highlighting-layer {
+    z-index: 1;
+    color: #c9d1d9;
+    pointer-events: none;  /* Кликаем "сквозь" подсветку в textarea */
+}
+
+/* Фикс для последней строки: элемент <code> внутри <pre> должен быть блочным */
+#highlighting-content {
+    display: block;
+    min-height: 100%;
+}
+
+/* --- ПРАВАЯ ПАНЕЛЬ (ASM) --- */
+.compiled-wrapper {
+    flex: 1;
+    width: 100%;
+    background-color: #0d1117;
+    /* Ключевое свойство для скролла в Flex-контейнере: */
+    min-height: 0;
+}
+
+#compiled-output {
+    margin: 0;
+    padding: 15px;
+    width: 100%;
+    height: 100%; /* Растягиваем на весь wrapper */
+    overflow: auto; /* ВКЛЮЧАЕМ СКРОЛЛ */
+
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    line-height: 20px;
+    color: #c9d1d9;
+    box-sizing: border-box;
+    white-space: pre-wrap; /* Разрешаем перенос длинных строк ASM */
+}
+
+/* ... ваши цвета синтаксиса ... */
+
+/* Цвета синтаксиса */
+.token-keyword { color: #ff7b72; font-weight: bold; } /* if, while, return */
+.token-type { color: #ff7b72; } /* int, string */
+.token-function { color: #d2a8ff; } /* generic functions */
+.token-string { color: #a5d6ff; } /* "text" */
+.token-number { color: #79c0ff; } /* 0x1A, 42 */
+.token-comment { color: #8b949e; font-style: italic; } /* // comment */
+
+/* Цвета синтаксиса Ассемблера */
+.asm-keyword { color: #ff7b72; font-weight: bold; } /* mov, call, syscall */
+.asm-register { color: #d2a8ff; } /* rax, rdi, rsp */
+.asm-number { color: #79c0ff; } /* 0x60, 1 */
+.asm-comment { color: #8b949e; font-style: italic; } /* ; комменты */
+.asm-label { color: #a5d6ff; font-weight: bold; } /* _start: */
