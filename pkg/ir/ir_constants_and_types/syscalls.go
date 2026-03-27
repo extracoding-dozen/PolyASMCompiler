@@ -1,5 +1,8 @@
+// Package ir_constants_and_types содержит определения номеров системных вызовов,
+// архитектурных регистров и типов данных для x86_64.
 package ir_constants_and_types
 
+// Константы номеров системных вызовов для архитектуры Linux x86_64.
 const (
 	SYSCALL_OPEN      = 2
 	SYSCALL_CLOSE     = 3
@@ -19,6 +22,7 @@ const (
 	SYSCALL_GETPPID   = 110
 )
 
+// SyscallNames сопоставляет числовые идентификаторы системных вызовов с их строковыми именами.
 var SyscallNames = map[int64]string{
 	SYSCALL_OPEN:      "sys_open",
 	SYSCALL_CLOSE:     "sys_close",
@@ -32,9 +36,8 @@ var SyscallNames = map[int64]string{
 	SYSCALL_RENAME:    "sys_rename",
 	SYSCALL_UNLINK:    "sys_unlink",
 	SYSCALL_NANOSLEEP: "sys_nanosleep",
-
-	SYSCALL_GETPID:  "sys_getpid",
-	SYSCALL_GETUID:  "sys_getuid",
-	SYSCALL_GETGID:  "sys_getgid",
-	SYSCALL_GETPPID: "sys_getppid",
+	SYSCALL_GETPID:    "sys_getpid",
+	SYSCALL_GETUID:    "sys_getuid",
+	SYSCALL_GETGID:    "sys_getgid",
+	SYSCALL_GETPPID:   "sys_getppid",
 }

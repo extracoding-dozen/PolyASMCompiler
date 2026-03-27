@@ -1,3 +1,5 @@
+// Package obfuscator реализует механизмы трансформации промежуточного представления (IR)
+// для защиты кода от статического и динамического анализа.
 package obfuscator
 
 import (
@@ -8,16 +10,23 @@ import (
 	"go.mod/pkg/ir/ir_constants_and_types"
 )
 
+// ObfuscatorConfig определяет параметры конфигурации процесса обфускации.
 type ObfuscatorConfig struct {
+	// EnableSandboxNoise включает генерацию ложных системных вызовов.
 	EnableSandboxNoise bool
-	NoiseFrequency     int
-
+	// NoiseFrequency задает вероятность вставки шумовых инструкций.
+	NoiseFrequency int
+	// EnableOpaquePreds включает создание непрозрачных предикатов.
 	EnableOpaquePreds bool
-	OpaqueFrequency   int
-
+	// OpaqueFrequency задает вероятность создания ложных ветвлений.
+	OpaqueFrequency int
+	// EnableStringCrypt включает XOR-шифрование строк.
 	EnableStringCrypt bool
+	// ObfuscateRepeat определяет количество проходов обфускации
+	ObfuscateRepeat int
 }
 
+// DefaultObfuscatorConfig возвращает конфигурацию с активированными методами защиты по умолчанию.
 func DefaultObfuscatorConfig() ObfuscatorConfig {
 	return ObfuscatorConfig{
 		EnableSandboxNoise: true,
@@ -25,15 +34,18 @@ func DefaultObfuscatorConfig() ObfuscatorConfig {
 		EnableOpaquePreds:  true,
 		OpaqueFrequency:    20,
 		EnableStringCrypt:  true,
+		ObfuscateRepeat:    1,
 	}
 }
 
+// Obfuscator выполняет полиморфные преобразования над списком инструкций IR.
 type Obfuscator struct {
 	ctx *ir.IRContext
 	cfg ObfuscatorConfig
 	rng *rand.Rand
 }
 
+// NewObfuscator создает новый экземпляр обфускатора с заданным контекстом и настройками.
 func NewObfuscator(ctx *ir.IRContext, cfg ObfuscatorConfig) *Obfuscator {
 	return &Obfuscator{
 		ctx: ctx,
@@ -42,101 +54,81 @@ func NewObfuscator(ctx *ir.IRContext, cfg ObfuscatorConfig) *Obfuscator {
 	}
 }
 
-// Obfuscate — ЕДИНСТВЕННЫЙ ПУБЛИЧНЫЙ МЕТОД (Оркестратор)
-func (o *Obfuscator) Obfuscate(input []ir.Instruction) []ir.Instruction {
-	output := input
+func (o *Obfuscator) SetNewConfig(newCfg ObfuscatorConfig) {
+	o.cfg = newCfg
+}
 
+func (o *Obfuscator) Obfuscate(input []ir.Instruction) []ir.Instruction {
+	o.cfg.ObfuscateRepeat %= 5
+	if o.cfg.ObfuscateRepeat == 0 {
+		return input
+	}
+	result := o.oneLayerObfuscate(input)
+	o.cfg.ObfuscateRepeat -= 1
+	for i := 0; i < o.cfg.ObfuscateRepeat; i++ {
+		result = o.oneLayerObfuscate(result)
+	}
+	return result
+}
+
+// Obfuscate применяет последовательность трансформаций к входному набору инструкций.
+func (o *Obfuscator) oneLayerObfuscate(input []ir.Instruction) []ir.Instruction {
+	output := input
 	if o.cfg.EnableStringCrypt {
 		output = o.passStringCrypt(output)
 	}
-
 	if o.cfg.EnableSandboxNoise {
 		output = o.passSandboxNoise(output)
 	}
-
 	if o.cfg.EnableOpaquePreds {
 		output = o.passOpaquePredicates(output)
 	}
-
 	return output
 }
 
-// passSandboxNoise вставляет безопасные сисколлы (getpid, getuid), чтобы заспамить strace песочницы
+// passSandboxNoise внедряет в поток команд безопасные системные вызовы для зашумления анализа strace.
 func (o *Obfuscator) passSandboxNoise(input []ir.Instruction) []ir.Instruction {
 	var output []ir.Instruction
-
-	safeSyscalls := []int64{
-		39,
-		102,
-		104,
-		110,
-	}
-
+	safeSyscalls := []int64{39, 102, 104, 110}
 	for _, inst := range input {
-		output = append(output, inst) // Добавляем оригинальную инструкцию
-
-		// С вероятностью NoiseFrequency вставляем мусорный сисколл
+		output = append(output, inst)
 		if o.rng.Intn(100) < o.cfg.NoiseFrequency {
 			junkReg := o.ctx.NextVReg()
 			randomSyscall := safeSyscalls[o.rng.Intn(len(safeSyscalls))]
-
 			output = append(output, ir.Instruction{
 				Op:   ir_constants_and_types.SYSCALL,
 				Dst:  junkReg,
 				Src1: ir.Imm{Value: randomSyscall},
-				Args: []ir.Value{}, // Аргументы не нужны
+				Args: []ir.Value{},
 			})
 		}
 	}
 	return output
 }
 
-// passOpaquePredicates создает "Непрозрачные предикаты".
-// Это условия, результат которых мы (компилятор) знаем заранее, а дизассемблер/анализатор — нет.
+// passOpaquePredicates вставляет логические условия, результат которых предопределен, для запутывания графа потока управления.
 func (o *Obfuscator) passOpaquePredicates(input []ir.Instruction) []ir.Instruction {
 	var output []ir.Instruction
-
 	for _, inst := range input {
-		// Не ломаем структуру уже существующих меток и прыжков
 		if inst.Op == ir_constants_and_types.LABEL || inst.Op == ir_constants_and_types.JMP || inst.Op == ir_constants_and_types.JE || inst.Op == ir_constants_and_types.JNE {
 			output = append(output, inst)
 			continue
 		}
-
 		if o.rng.Intn(100) < o.cfg.OpaqueFrequency {
-			// Генерируем ложный блок кода.
-			// Логика:
-			//   vX = СЛУЧАЙНОЕ_ЧИСЛО
-			//   cmp vX, СЛУЧАЙНОЕ_ЧИСЛО
-			//   jne .L_FAKE  (Никогда не выполнится, так как они равны!)
-			//   ... оригинальная инструкция ...
-			//   jmp .L_END
-			// .L_FAKE:
-			//   ... мусорный код ...
-			// .L_END:
-
 			magicNum := int64(o.rng.Intn(9999) + 1)
 			vReg := o.ctx.NextVReg()
 			lblFake := o.ctx.NextLabel()
 			lblEnd := o.ctx.NextLabel()
-
-			// Устанавливаем предикат (всегда TRUE)
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.MOV, Dst: vReg, Src1: ir.Imm{Value: magicNum}})
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.CMP, Dst: vReg, Src1: ir.Imm{Value: magicNum}})
-			output = append(output, ir.Instruction{Op: ir_constants_and_types.JNE, Dst: lblFake}) // Прыжок на фейк, если НЕ равно
-
-			// Реальный код
+			output = append(output, ir.Instruction{Op: ir_constants_and_types.JNE, Dst: lblFake})
 			output = append(output, inst)
-			output = append(output, ir.Instruction{Op: ir_constants_and_types.JMP, Dst: lblEnd}) // Пропускаем фейк
-
-			// Ложный код (Junk Block - Дизассемблер IDA Pro сойдет с ума, пытаясь это проанализировать)
+			output = append(output, ir.Instruction{Op: ir_constants_and_types.JMP, Dst: lblEnd})
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.LABEL, Dst: lblFake})
 			junkReg1 := o.ctx.NextVReg()
 			junkReg2 := o.ctx.NextVReg()
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.MOV, Dst: junkReg1, Src1: ir.Imm{Value: 0xDEADBEEF}})
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.ADD, Dst: junkReg2, Src1: junkReg1})
-
-			// Конец конструкции
 			output = append(output, ir.Instruction{Op: ir_constants_and_types.LABEL, Dst: lblEnd})
 		} else {
 			output = append(output, inst)
@@ -145,50 +137,37 @@ func (o *Obfuscator) passOpaquePredicates(input []ir.Instruction) []ir.Instructi
 	return output
 }
 
-// passStringCrypt шифрует строки XOR-ом во время компиляции
-// и вставляет новую IR-инструкцию MACRO_DECRYPT_STR для расшифровки в рантайме.
+// passStringCrypt шифрует строковые константы XOR-ключом и добавляет инструкции для их динамической расшифровки.
 func (o *Obfuscator) passStringCrypt(input []ir.Instruction) []ir.Instruction {
 	var output []ir.Instruction
-
 	for _, inst := range input {
 		if inst.Op == ir_constants_and_types.LOAD_STR {
-			// Оригинальная строка (взятая из исходника)
 			originalStr := inst.Src1.(ir.Str).Value
 			dstReg := inst.Dst.(ir.VReg)
 			strLen := len(originalStr)
-
 			if strLen == 0 {
 				output = append(output, inst)
 				continue
 			}
-
-			// 1. Генерируем случайный XOR-ключ (от 1 до 255)
 			xorKey := byte(o.rng.Intn(254) + 1)
-
-			// 2. Шифруем строку в сырой массив байт
 			encryptedBytes := make([]byte, strLen)
 			for i := 0; i < strLen; i++ {
 				encryptedBytes[i] = originalStr[i] ^ xorKey
 			}
-
-			// 3. Выдаем LOAD_STR, но передаем сырые байты, а не строку!
 			output = append(output, ir.Instruction{
 				Op:  ir_constants_and_types.LOAD_STR,
 				Dst: dstReg,
 				Src1: ir.Str{
-					Value: "",             // Текст больше не нужен
-					Bytes: encryptedBytes, // Передаем сырой зашифрованный массив
+					Value: "",
+					Bytes: encryptedBytes,
 				},
 			})
-
-			// 4. Сразу выдаем инструкцию на расшифровку
 			output = append(output, ir.Instruction{
 				Op:   ir_constants_and_types.MACRO_DECRYPT_STR,
 				Dst:  dstReg,
 				Src1: ir.Imm{Value: int64(xorKey)},
 				Src2: ir.Imm{Value: int64(strLen)},
 			})
-
 		} else {
 			output = append(output, inst)
 		}

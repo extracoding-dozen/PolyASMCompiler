@@ -1,3 +1,5 @@
+// Package parser реализует синтаксический анализатор (парсер), преобразующий поток токенов
+// в абстрактное синтаксическое дерево (AST) методом рекурсивного спуска (Pratt Parser).
 package parser
 
 import (
@@ -5,18 +7,20 @@ import (
 	"go.mod/pkg/lexer"
 )
 
+// Приоритеты операторов.
 const (
 	_ int = iota
 	LOWEST
-	ASSIGN
-	EQUALS
-	LESSGREATER
-	SUM
-	PRODUCT
-	PREFIX
-	CALL
+	ASSIGN      // =
+	EQUALS      // ==
+	LESSGREATER // > или <
+	SUM         // +
+	PRODUCT     // *
+	PREFIX      // -X или !X
+	CALL        // myFunction(X)
 )
 
+// precedences сопоставляет типы токенов с их приоритетами.
 var precedences = map[lexer.TokenType]int{
 	lexer.ASSIGN: ASSIGN,
 	lexer.EQ:     EQUALS,

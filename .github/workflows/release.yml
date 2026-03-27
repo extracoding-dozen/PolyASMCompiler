@@ -1,0 +1,87 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Пайплайн запустится при пуше тега, например v1.0.0
+
+jobs:
+  # --- ЗАДАЧА №1: СБОРКА БИНАРНИКОВ НА РОДНЫХ СИСТЕМАХ ---
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            output_name: my-app-linux
+            asset_ext: ""
+          - os: windows-latest
+            output_name: my-app-windows
+            asset_ext: ".exe"
+          - os: macos-latest
+            output_name: my-app-macos
+            asset_ext: ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23' # Укажи нужную версию Go, если требуется другая
+
+      # Эта команда скачает модули и сгенерирует go.sum, если он пустой или отсутствует
+      - name: Tidy and Download modules
+        run: go mod tidy
+
+      # Собираем бинарник из основного файла
+      - name: Build Binary
+        run: go build -v -o ${{ matrix.output_name }}${{ matrix.asset_ext }} ./cmd/main.go
+
+      # Загружаем собранный файл как временный артефакт
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}
+          path: ${{ matrix.output_name }}${{ matrix.asset_ext }}
+
+  # --- ЗАДАЧА №2: СОЗДАНИЕ РЕЛИЗА И ЗАГРУЗКА АРХИВОВ ---
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Даем право на создание релиза
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Скачиваем ВСЕ артефакты, созданные в задаче 'build'
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Упаковываем каждый бинарник в свой ZIP-архив
+      - name: Package artifacts into ZIPs
+        run: |
+          cd artifacts
+          # Упаковываем Windows
+          cd binary-windows-latest && zip ../my-app-windows.zip * && cd ..
+          # Упаковываем Linux
+          cd binary-ubuntu-latest && zip ../my-app-linux.zip * && cd ..
+          # Упаковываем macOS
+          cd binary-macos-latest && zip ../my-app-macos.zip * && cd ..
+
+      # Создаем релиз и прикрепляем к нему ZIP-архивы
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          files: |
+            artifacts/my-app-windows.zip
+            artifacts/my-app-linux.zip
+            artifacts/my-app-macos.zip

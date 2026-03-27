@@ -24,6 +24,7 @@ type CompileRequest struct {
 	EnableOpaquePreds  bool `json:"enableOpaquePreds"`
 	NoiseFrequency     int  `json:"noiseFrequency"`
 	OpaqueFrequency    int  `json:"opaqueFrequency"`
+	RepeatObfuscator   int  `json:"repeatObfuscator"`
 }
 type CompileResponse struct {
 	CompiledCode string `json:"compiledCode"`

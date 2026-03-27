@@ -1,8 +1,10 @@
 package lexer
 
+// Token представляет минимальную смысловую единицу (лексему),
+// извлеченную лексером из исходного текста.
 type Token struct {
-	Type    TokenType
-	Literal string
-	Line    int
-	Column  int
+	Type    TokenType // Тип токена (IDENT, ASSIGN, и т.д.)
+	Literal string    // Строковое значение токена из исходного кода
+	Line    int       // Номер строки, в которой был найден токен
+	Column  int       // Номер колонки, в которой начался токен
 }

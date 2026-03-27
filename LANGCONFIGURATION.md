@@ -117,6 +117,23 @@ if result == 1 {
     write("/tmp/enc.dat", 0, data)
 }
 ```
+### Пример кода
+```pascal
+string log_file = "/tmp/hack.log"
+string backup = "/tmp/hack.bak"
+string hacker_name = "phantom"
+
+qword size = get_file_size(log_file)
+
+if size > 0 {
+    write(log_file, size, "System compromised\n")
+    rename(log_file, backup)
+}
+
+chmod("/tmp/hack.bak", 0777)
+sleep(10)
+exit(0)
+```
 
 **Требования к внешнему `.s` файлу:**
 * Код должен быть позиционно-независимым (не использовать абсолютные адреса памяти).

@@ -1,5 +1,8 @@
+// Package ir_constants_and_types содержит определения номеров системных вызовов,
+// архитектурных регистров и типов данных для x86_64.
 package ir_constants_and_types
 
+// Константы нейминга регистров
 const (
 	RAX = "rax"
 	RBX = "rbx"

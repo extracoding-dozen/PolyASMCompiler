@@ -211,7 +211,7 @@ label { cursor: pointer; }
 .token-keyword { color: #ff7b72; font-weight: bold; } /* if, while, return */
 .token-type { color: #ff7b72; } /* int, string */
 .token-function { color: #d2a8ff; } /* generic functions */
-.token-string { color: #a5d6ff; } /* "text" */
+.token-str { color: #a5d6ff; } /* "text" */
 .token-number { color: #79c0ff; } /* 0x1A, 42 */
 .token-comment { color: #8b949e; font-style: italic; } /* // comment */
 

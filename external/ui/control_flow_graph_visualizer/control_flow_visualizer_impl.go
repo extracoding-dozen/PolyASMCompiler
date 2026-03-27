@@ -10,7 +10,7 @@ import (
 	"go.mod/pkg/ir/ir_constants_and_types"
 )
 
-// basicBlock представляет собой один узел в графе (окно с кодом)
+// basicBlock представляет собой один узел в графе
 type basicBlock struct {
 	ID           string
 	Instructions []ir.Instruction
@@ -19,8 +19,8 @@ type basicBlock struct {
 }
 
 type cyElement struct {
-	Data    map[string]string `json:"data"`
-	Classes string            `json:"classes,omitempty"`
+	Data    map[string]interface{} `json:"data"`
+	Classes string                 `json:"classes,omitempty"`
 }
 
 type ControlFlowGraphVisualizerImpl struct{}
@@ -29,7 +29,31 @@ func NewControlFlowGraphVisualizerImpl() ControlFlowGraphVisualizer {
 	return &ControlFlowGraphVisualizerImpl{}
 }
 
-// buildCFG разбивает плоский IR-код на блоки
+// Вспомогательная функция для проброса связей в обход пустых блоков
+func resolveTarget(blocks map[string]*basicBlock, target string) string {
+	visited := make(map[string]bool)
+	curr := target
+
+	for {
+		if visited[curr] {
+			break // Защита от бесконечного цикла
+		}
+		visited[curr] = true
+
+		b, exists := blocks[curr]
+		if !exists {
+			break
+		}
+		// Если блок пустой и у него есть путь дальше (fallthrough) - идем по нему
+		if len(b.Instructions) == 0 && b.FalseTarget != "" {
+			curr = b.FalseTarget
+			continue
+		}
+		break
+	}
+	return curr
+}
+
 func (cfv *ControlFlowGraphVisualizerImpl) buildCFG(instructions []ir.Instruction) map[string]*basicBlock {
 	blocks := make(map[string]*basicBlock)
 	var currentBlock *basicBlock
@@ -63,7 +87,6 @@ func (cfv *ControlFlowGraphVisualizerImpl) buildCFG(instructions []ir.Instructio
 				currentBlock = newBlock(labelName)
 			}
 
-			// Добавляем саму инструкцию метки для наглядности
 			currentBlock.Instructions = append(currentBlock.Instructions, inst)
 			continue
 		}
@@ -71,16 +94,12 @@ func (cfv *ControlFlowGraphVisualizerImpl) buildCFG(instructions []ir.Instructio
 		currentBlock.Instructions = append(currentBlock.Instructions, inst)
 
 		if inst.Op == ir_constants_and_types.JMP || inst.Op == ir_constants_and_types.JE || inst.Op == ir_constants_and_types.JNE {
-			targetLabel := inst.Dst.(ir.Lbl).Name
-			currentBlock.TrueTarget = targetLabel
+			currentBlock.TrueTarget = inst.Dst.(ir.Lbl).Name
 
 			if inst.Op != ir_constants_and_types.JMP && i+1 < len(instructions) {
-				nextInst := instructions[i+1]
-				nextLabel := ""
-				if nextInst.Op == ir_constants_and_types.LABEL {
-					nextLabel = nextInst.Dst.(ir.Lbl).Name
-				} else {
-					nextLabel = fmt.Sprintf("block_%d", blockCounter)
+				nextLabel := fmt.Sprintf("block_%d", blockCounter)
+				if instructions[i+1].Op == ir_constants_and_types.LABEL {
+					nextLabel = instructions[i+1].Dst.(ir.Lbl).Name
 				}
 				currentBlock.FalseTarget = nextLabel
 			}
@@ -89,7 +108,7 @@ func (cfv *ControlFlowGraphVisualizerImpl) buildCFG(instructions []ir.Instructio
 		}
 	}
 
-	// ФИНАЛЬНАЯ ЗАЧИСТКА: Удаляем абсолютно пустые блоки из памяти перед рендером
+	// 1. Убираем пустые блоки из памяти
 	cleanBlocks := make(map[string]*basicBlock)
 	for id, block := range blocks {
 		if len(block.Instructions) > 0 {
@@ -97,137 +116,178 @@ func (cfv *ControlFlowGraphVisualizerImpl) buildCFG(instructions []ir.Instructio
 		}
 	}
 
+	// 2. Перенаправляем (rewiring) связи в обход удаленных пустых блоков
+	for _, block := range cleanBlocks {
+		if block.TrueTarget != "" {
+			block.TrueTarget = resolveTarget(blocks, block.TrueTarget)
+		}
+		if block.FalseTarget != "" {
+			block.FalseTarget = resolveTarget(blocks, block.FalseTarget)
+		}
+	}
+
 	return cleanBlocks
 }
 
-// colorize подсвечивает синтаксис для HTML (Цвета в стиле Dark Theme)
+// colorize подсвечивает синтаксис (Используем INLINE стили для безопасного SVG рендера)
 func colorize(inst ir.Instruction) string {
 	str := inst.String()
 
-	// Подсветка опкодов
-	str = strings.Replace(str, string(inst.Op), fmt.Sprintf("<span class='op'>%s</span>", inst.Op), 1)
+	// Цвета в стиле VS Code Dark
+	colorOp := "#569cd6"  // Синий для инструкций
+	colorStr := "#ce9178" // Оранжевый для строк
+	colorMac := "#c586c0" // Фиолетовый для макросов
 
-	// Подсветка строк и макросов
+	str = strings.Replace(str, string(inst.Op), fmt.Sprintf("<span style='color:%s; font-weight:bold;'>%s</span>", colorOp, inst.Op), 1)
+
 	if inst.Op == ir_constants_and_types.LOAD_STR {
-		str = strings.Replace(str, inst.Src1.String(), fmt.Sprintf("<span class='str'>%s</span>", inst.Src1.String()), 1)
+		str = strings.Replace(str, inst.Src1.String(), fmt.Sprintf("<span style='color:%s;'>%s</span>", colorStr, inst.Src1.String()), 1)
 	}
 	if inst.Op == ir_constants_and_types.SYSCALL || strings.HasPrefix(string(inst.Op), "MACRO_") {
-		str = fmt.Sprintf("<span class='macro'>%s</span>", str)
+		str = fmt.Sprintf("<span style='color:%s; font-style:italic;'>%s</span>", colorMac, str)
 	}
 
 	return str
 }
 
-// GenerateHTMLFile создает независимый HTML файл с графом
 func (cfv *ControlFlowGraphVisualizerImpl) GenerateHTMLFile(instructions []ir.Instruction, filename string) error {
 	blocks := cfv.buildCFG(instructions)
-
 	var elements []cyElement
 
-	// 1. Создаем Узлы (Nodes)
+	// 1. Создаем Узлы
 	for id, block := range blocks {
-		if len(block.Instructions) == 0 && id != "ENTRY" {
-			continue
-		} // Пропускаем пустые
-
 		var htmlContent strings.Builder
-		htmlContent.WriteString(fmt.Sprintf("<div class='header'>%s</div><div class='code'>", id))
-		for _, inst := range block.Instructions {
-			htmlContent.WriteString(colorize(inst) + "<br/>")
+
+		linesCount := len(block.Instructions)
+
+		// ФИКС 1: Если блок пустой, добавляем заглушку NOP
+		if linesCount == 0 {
+			htmlContent.WriteString("<span style='color:#569cd6; font-weight:bold;'>NOP</span> <span style='color:#6a9955;'>// opaque / empty block</span><br/>")
+			linesCount = 1 // Чтобы высота узла считалась минимум для 1 строки
+		} else {
+			for _, inst := range block.Instructions {
+				htmlContent.WriteString(colorize(inst) + "<br/>")
+			}
 		}
-		htmlContent.WriteString("</div>")
+
+		// Высчитываем высоту узла в зависимости от кол-ва строк кода
+		nodeHeight := (linesCount * 18) + 40 // 18px на строку + 40px на отступы и хедер
 
 		elements = append(elements, cyElement{
-			Data: map[string]string{"id": id, "label": htmlContent.String()},
+			Data: map[string]interface{}{
+				"id":     id,
+				"label":  htmlContent.String(),
+				"height": nodeHeight,
+			},
 		})
 	}
 
 	// 2. Создаем Связи (Edges)
 	for id, block := range blocks {
 		if block.TrueTarget != "" {
-			// Безусловный JMP - синий. Условный True (JE/JNE) - зеленый.
 			edgeClass := "edge-true"
-			lastInst := block.Instructions[len(block.Instructions)-1]
-			if lastInst.Op == ir_constants_and_types.JMP {
-				edgeClass = "edge-jmp"
+			if len(block.Instructions) > 0 {
+				lastInst := block.Instructions[len(block.Instructions)-1]
+				if lastInst.Op == ir_constants_and_types.JMP {
+					edgeClass = "edge-jmp"
+				}
 			}
 
-			elements = append(elements, cyElement{
-				Data:    map[string]string{"source": id, "target": block.TrueTarget},
-				Classes: edgeClass,
-			})
+			// Проверка, что цель существует (защита от битых связей)
+			if _, exists := blocks[block.TrueTarget]; exists {
+				elements = append(elements, cyElement{
+					Data:    map[string]interface{}{"source": id, "target": block.TrueTarget},
+					Classes: edgeClass,
+				})
+			}
 		}
 		if block.FalseTarget != "" {
-			// Ветка False (Fallthrough) - красная. Обычный переход - серый.
 			edgeClass := "edge-false"
-			lastInst := block.Instructions[len(block.Instructions)-1]
-			if lastInst.Op != ir_constants_and_types.JE && lastInst.Op != ir_constants_and_types.JNE {
-				edgeClass = "edge-next"
+			if len(block.Instructions) > 0 {
+				lastInst := block.Instructions[len(block.Instructions)-1]
+				if lastInst.Op != ir_constants_and_types.JE && lastInst.Op != ir_constants_and_types.JNE {
+					edgeClass = "edge-next"
+				}
 			}
 
-			elements = append(elements, cyElement{
-				Data:    map[string]string{"source": id, "target": block.FalseTarget},
-				Classes: edgeClass,
-			})
+			if _, exists := blocks[block.FalseTarget]; exists {
+				elements = append(elements, cyElement{
+					Data:    map[string]interface{}{"source": id, "target": block.FalseTarget},
+					Classes: edgeClass,
+				})
+			}
 		}
 	}
 
 	jsonData, _ := json.Marshal(elements)
 
-	// 3. Шаблон HTML страницы
+	// ФИКС 2: Добавлены кнопки ЗУМА и стили в HTML шаблон
 	htmlTemplate := `<!DOCTYPE html>
 <html>
 <head>
-    <title>PolyASM Control Flow Graph</title>
+    <title>PolyASM Visualizer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.23.0/cytoscape.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
     <style>
-        body { background-color: #1e1e1e; margin: 0; font-family: monospace; }
-        #cy { width: 100vw; height: 100vh; display: block; }
+        body { background-color: #1e1e1e; margin: 0; padding: 0; font-family: monospace; overflow: hidden; }
+        #cy { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+        #controls { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; color: #fff; font-family: sans-serif; font-size: 12px; z-index: 10; border: 1px solid #444; }
         
-        /* Стили для генерации SVG-картинок внутри узлов */
-        .op { color: #569cd6; font-weight: bold; }
-        .str { color: #ce9178; }
-        .macro { color: #c586c0; font-style: italic; }
+        /* Стили для кнопок управления зумом */
+        .zoom-controls { position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+        .btn-action { width: 40px; height: 40px; background-color: #2d2d30; color: #cccccc; border: 1px solid #444; border-radius: 6px; font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.1s ease-in-out; }
+        .btn-action:hover { background-color: #3e3e42; color: #ffffff; border-color: #666; }
+        .btn-action:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
     <div id="cy"></div>
-    <script>
-        // Регистрация плагина Dagre (идеальное расположение сверху-вниз)
-        cytoscape.use( cytoscapeDagre );
+    <div id="controls">Mouse Wheel: Zoom | Drag: Pan</div>
 
+    <!-- Кнопки зума -->
+    <div class="zoom-controls">
+        <button class="btn-action" id="zoom-in" title="Zoom In">+</button>
+        <button class="btn-action" id="zoom-out" title="Zoom Out">−</button>
+        <button class="btn-action" id="zoom-fit" title="Center Graph" style="font-size: 18px;">⛶</button>
+    </div>
+
+    <script>
+        cytoscape.use( cytoscapeDagre );
         const elements = ` + string(jsonData) + `;
 
         const cy = cytoscape({
             container: document.getElementById('cy'),
             elements: elements,
+            wheelSensitivity: 0.2, /* Делаем зум колесиком более плавным */
             style: [
                 {
                     selector: 'node',
                     style: {
                         'shape': 'round-rectangle',
-                        'background-color': '#252526',
-                        'border-width': 1,
-                        'border-color': '#333',
-                        // Магия рендера HTML-таблиц внутри узлов графа через SVG-оболочку
+                        'background-color': 'transparent', 
+                        'width': 350,
+                        'height': 'data(height)',
                         'background-image': function(node) {
                             const html = node.data('label');
-                            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">' +
-                                '<foreignObject x="0" y="0" width="100%" height="100%">' +
-                                '<div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Consolas, monospace; font-size: 12px; color: #d4d4d4; padding: 10px;">' +
+                            const id = node.data('id');
+                            const h = node.data('height');
+                            
+                            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="350" height="' + h + '">' +
+                                '<rect width="350" height="' + h + '" rx="8" ry="8" fill="#1e1e1e" stroke="#555" stroke-width="2"/>' +
+                                '<rect width="350" height="26" rx="8" ry="8" fill="#2d2d30"/>' +
+                                '<path d="M0 20 L0 26 L350 26 L350 20 Z" fill="#2d2d30"/>' +
+                                '<text x="12" y="18" fill="#9cdcfe" font-family="sans-serif" font-size="13" font-weight="bold">' + id + '</text>' +
+                                '<foreignObject x="0" y="26" width="100%" height="100%">' +
+                                '<div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Consolas, \'Courier New\', monospace; font-size: 13px; color: #d4d4d4; padding: 10px; line-height: 1.4; white-space: nowrap;">' +
                                 html +
                                 '</div></foreignObject></svg>';
+                                
                             return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
                         },
                         'background-fit': 'none',
                         'background-position-x': '0px',
                         'background-position-y': '0px',
-                        'width': 350,
-                        'height': function(node) {
-                            return (node.data('label').match(/<br\/>/g) || []).length * 16 + 40;
-                        }
                     }
                 },
                 {
@@ -235,23 +295,57 @@ func (cfv *ControlFlowGraphVisualizerImpl) GenerateHTMLFile(instructions []ir.In
                     style: {
                         'curve-style': 'bezier',
                         'target-arrow-shape': 'triangle',
-                        'width': 2
+                        'width': 2,
+                        'arrow-scale': 1.5
                     }
                 },
                 { selector: '.edge-jmp', style: { 'line-color': '#007acc', 'target-arrow-color': '#007acc' } },
                 { selector: '.edge-true', style: { 'line-color': '#4CAF50', 'target-arrow-color': '#4CAF50' } },
                 { selector: '.edge-false', style: { 'line-color': '#F44336', 'target-arrow-color': '#F44336' } },
-                { selector: '.edge-next', style: { 'line-color': '#808080', 'target-arrow-color': '#808080' } }
+                { selector: '.edge-next', style: { 'line-color': '#666666', 'target-arrow-color': '#666666' } }
             ],
             layout: {
                 name: 'dagre',
-                nodeSep: 50,
-                rankSep: 100,
-                rankDir: 'TB' // Сверху вниз
+                nodeSep: 60,
+                rankSep: 120,
+                rankDir: 'TB',
+                fit: false
             }
         });
 
-        // Интерактивность: Зум и панорамирование включены по умолчанию
+        // ЛОГИКА КНОПОК ЗУМА
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            cy.zoom(cy.zoom() * 1.25); // Увеличиваем на 25%
+        });
+
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            cy.zoom(cy.zoom() * 0.8);  // Уменьшаем на 20%
+        });
+
+        document.getElementById('zoom-fit').addEventListener('click', () => {
+            cy.fit(50); // Отцентровать граф (с отступом 50px от краев экрана)
+        });
+
+        // ЛОГИКА ФОКУСИРОВКИ
+        cy.ready(function() {
+            let rootNode = cy.nodes('#ENTRY');
+            
+            if (rootNode.empty()) {
+                rootNode = cy.nodes().roots().first();
+            }
+            if (rootNode.empty()) {
+                rootNode = cy.nodes().first();
+            }
+
+            if (!rootNode.empty()) {
+                cy.animate({
+                    zoom: 1.1,
+                    center: { eles: rootNode },
+                }, {
+                    duration: 500
+                });
+            }
+        });
     </script>
 </body>
 </html>`

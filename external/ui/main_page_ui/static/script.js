@@ -2,11 +2,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = document.getElementById('editor');
     const highlightingContent = document.getElementById('highlighting-content');
 
-
     window.rawCompiledAsm = "";
 
-    editor.addEventListener('input', updateHighlighting);
+    // Делаем функцию глобальной, чтобы её можно было вызывать из loadPsFile
+    window.updateHighlighting = function() {
+        let text = editor.value;
 
+        if (text.length > 0 && text[text.length - 1] === '\n') {
+            text += ' ';
+        }
+
+        highlightingContent.innerHTML = applySyntaxHighlighting(text);
+    };
+
+    editor.addEventListener('input', window.updateHighlighting);
 
     editor.addEventListener('scroll', () => {
         const highlightingLayer = document.getElementById('highlighting-layer');
@@ -14,33 +23,27 @@ document.addEventListener("DOMContentLoaded", () => {
         highlightingLayer.scrollLeft = editor.scrollLeft;
     });
 
-    function updateHighlighting() {
-        let text = editor.value;
-
-
-
-
-        if (text[text.length - 1] === '\n') {
-            text += ' ';
-        }
-
-        highlightingContent.innerHTML = applySyntaxHighlighting(text);
-    }
-
     function applySyntaxHighlighting(text) {
-
         text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+        // 1. ИЩЕМ СТРОКИ И КОММЕНТАРИИ ЗА ОДИН ПРОХОД
+        // ВАЖНО: класс теперь называется token-str, чтобы не конфликтовать со словом string!
+        text = text.replace(/(\/\/.*|"(?:\\.|[^"\\])*")/g, function(match) {
+            if (match.startsWith('//')) {
+                return '<span class="token-comment">' + match + '</span>';
+            } else {
+                return '<span class="token-str">' + match + '</span>';
+            }
+        });
 
-        text = text.replace(/(\/\/.*)/g, '<span class="token-comment">$1</span>');
-
-        const parts = text.split(/(<span class="token-comment">.*?<\/span>)/g);
+        // 2. РАЗБИВАЕМ ТЕКСТ ПО ЭТИМ СПАНАМ (чтобы не сломать их внутренности)
+        const parts = text.split(/(<span class="token-comment">.*?<\/span>|<span class="token-str">.*?<\/span>)/g);
 
         for (let i = 0; i < parts.length; i++) {
+            // Обрабатываем только то, что НЕ является строкой или комментарием
             if (!parts[i].startsWith('<span')) {
                 let part = parts[i];
 
-                part = part.replace(/("(?:\\.|[^"\\])*")/g, '<span class="token-string">$1</span>');
                 // Ключевые слова
                 part = part.replace(/\b(if|else|while|return|execute|fork|exit|sleep|copy|rename|write|delete|get_file_size|chmod|chown|setattr|useradd|passwd|connect)\b/g, '<span class="token-keyword">$1</span>');
                 // Типы
@@ -49,21 +52,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 part = part.replace(/\b(0x[a-fA-F0-9]+|\d+)\b/g, '<span class="token-number">$1</span>');
                 // Функции
                 part = part.replace(/(\b[a-zA-Z_]\w*\b)(?=\s*\()/g, '<span class="token-function">$1</span>');
+
                 parts[i] = part;
             }
         }
         return parts.join('');
     }
 
-    // Запускаем подсветку при старте страницы, если в textarea есть текст
-    updateHighlighting();
+    // Запускаем подсветку при старте страницы
+    window.updateHighlighting();
 });
 
 // --- ПОДСВЕТКА ASM ---
 function applyAsmHighlighting(text) {
     if (!text) return "";
     text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    text = text.replace(/([;].*)/g, '<span class="token-comment">$1</span>'); // ASM комменты
+    text = text.replace(/([;].*)/g, '<span class="token-comment">$1</span>');
 
     const parts = text.split(/(<span class="token-comment">.*?<\/span>)/g);
     for (let i = 0; i < parts.length; i++) {
@@ -86,9 +90,8 @@ async function runCompilation() {
 
     logsOutput.textContent = "[INFO] Compiling...\n";
     compiledOutput.innerHTML = "";
-    window.rawCompiledAsm = ""; // Сбрасываем сырой код
+    window.rawCompiledAsm = "";
 
-    // ... сбор payload (как в прошлом ответе) ...
     const payload = {
         code: document.getElementById('editor').value,
         optimizationLevel: document.getElementById('opt-level').value,
@@ -98,7 +101,8 @@ async function runCompilation() {
         enableStringCrypt: document.getElementById('chk-string').checked,
         enableOpaquePreds: document.getElementById('chk-opaque').checked,
         noiseFrequency: parseInt(document.getElementById('num-noise').value, 10),
-        opaqueFrequency: parseInt(document.getElementById('num-opaque').value, 10)
+        opaqueFrequency: parseInt(document.getElementById('num-opaque').value, 10),
+        repeatObfuscator: parseInt(document.getElementById('obfs_qua').value, 10)
     };
 
     try {
@@ -113,10 +117,7 @@ async function runCompilation() {
         const data = await response.json();
         logsOutput.textContent += data.logs;
 
-        // Сохраняем чистый ASM в переменную для кнопки SAVE
         window.rawCompiledAsm = data.compiledCode;
-
-        // Вставляем разукрашенный HTML в правое окно
         compiledOutput.innerHTML = applyAsmHighlighting(data.compiledCode);
 
     } catch (error) {
@@ -131,29 +132,23 @@ function saveAsmFile() {
         return;
     }
 
-    // Создаем Blob (бинарный объект) из текста
     const blob = new Blob([window.rawCompiledAsm], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
 
-    // Создаем невидимую ссылку <a> и "кликаем" по ней
     const a = document.createElement("a");
     a.href = url;
-    a.download = "payload.asm"; // Имя файла по умолчанию
+    a.download = "payload.s";
     document.body.appendChild(a);
     a.click();
 
-    // Убираем мусор
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
 
-// ... функция openGraph ...
 function openGraph(type) {
     if (type === 'pre') {
-        // Открывает ручку serveClearGraph
         window.open('/graph/clear', '_blank', 'width=1000,height=800');
     } else if (type === 'post') {
-        // Открывает ручку serveObfuscatedGraph
         window.open('/graph/obfuscated', '_blank', 'width=1000,height=800');
     }
 }
@@ -161,11 +156,8 @@ function openGraph(type) {
 // --- ФУНКЦИЯ ЗАГРУЗКИ ФАЙЛА .PS ---
 function loadPsFile(event) {
     const file = event.target.files[0];
-    if (!file) {
-        return; // Пользователь отменил выбор файла
-    }
+    if (!file) return;
 
-    // Проверяем расширение (опционально, так как input уже фильтрует, но для надежности)
     const fileName = file.name.toLowerCase();
     if (!fileName.endsWith('.ps') && !fileName.endsWith('.txt')) {
         alert("Пожалуйста, выберите файл с расширением .ps (или текстовый файл)");
@@ -174,39 +166,27 @@ function loadPsFile(event) {
 
     const reader = new FileReader();
 
-    // Что делать, когда файл прочитан
     reader.onload = function(e) {
         const contents = e.target.result;
-
-        // Вставляем содержимое в textarea
         const editor = document.getElementById('editor');
         editor.value = contents;
 
-        // ВАЖНО: Принудительно вызываем функцию обновления подсветки,
-        // так как программное изменение .value не вызывает событие 'input'
+        // Вызываем функцию обновления подсветки
         if (window.updateHighlighting) {
             window.updateHighlighting();
         } else {
-            // Если функция updateHighlighting внутри DOMContentLoaded,
-            // имитируем событие input вручную:
             const event = new Event('input', { bubbles: true });
             editor.dispatchEvent(event);
         }
 
-        // Обновляем заголовок панели, чтобы показать имя загруженного файла
         const headerText = document.querySelector('.ide-container .panel-header span');
-        if (headerText) {
-            headerText.textContent = file.name;
-        }
+        if (headerText) headerText.textContent = file.name;
 
-        // Записываем лог об успешной загрузке
         const logsOutput = document.getElementById('logs-output');
         logsOutput.textContent += `[INFO] Файл ${file.name} успешно загружен.\n`;
 
-        // Сбрасываем значение инпута, чтобы можно было загрузить этот же файл повторно
         event.target.value = '';
     };
 
-    // Читаем файл как текст
     reader.readAsText(file);
 }
