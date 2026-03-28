@@ -82,6 +82,6 @@ jobs:
         with:
           name: Release ${{ github.ref_name }}
           files: |
-            artifacts/my-app-windows.zip
-            artifacts/my-app-linux.zip
-            artifacts/my-app-macos.zip
+            artifacts/PolyASMToolkit-windows.zip
+            artifacts/PolyASMToolkit-linux.zip
+            artifacts/PolyASMToolkit-macos.zip
